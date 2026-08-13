@@ -1,6 +1,3 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {
-  output: 'export', // Baris ini penting untuk GitHub Pages
-  images: { unoptimized: true }
-}
+const nextConfig = {}
 module.exports = nextConfig
