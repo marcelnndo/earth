@@ -32,6 +32,15 @@ export default function RotatingEarth({ width = 800, height = 600, className = "
     canvas.style.height = `${containerHeight}px`
     context.scale(dpr, dpr)
 
+    // Bikin bintang galaksi secara acak
+    const numStars = 400
+    const stars = Array.from({ length: numStars }, () => ({
+      x: Math.random() * containerWidth,
+      y: Math.random() * containerHeight,
+      r: Math.random() * 1.5,
+      alpha: Math.random() * 0.8 + 0.2
+    }))
+
     const projection = d3
       .geoOrthographic()
       .scale(radius)
@@ -107,35 +116,56 @@ export default function RotatingEarth({ width = 800, height = 600, className = "
 
     const render = () => {
       context.clearRect(0, 0, containerWidth, containerHeight)
+
+      // 1. Gambar Latar Belakang Galaksi (Gradien Biru Malam ke Hitam)
+      const gradient = context.createRadialGradient(
+        containerWidth / 2, containerHeight / 2, 0,
+        containerWidth / 2, containerHeight / 2, containerWidth
+      )
+      gradient.addColorStop(0, "#0b0b1a")
+      gradient.addColorStop(1, "#000000")
+      context.fillStyle = gradient
+      context.fillRect(0, 0, containerWidth, containerHeight)
+
+      // 2. Gambar Bintang-bintang
+      stars.forEach((star) => {
+        context.beginPath()
+        context.arc(star.x, star.y, star.r, 0, 2 * Math.PI)
+        context.fillStyle = `rgba(255, 255, 255, ${star.alpha})`
+        context.fill()
+      })
+
       const currentScale = projection.scale()
       const scaleFactor = currentScale / radius
 
+      // 3. Gambar Dasar Bumi (Hitam pekat untuk menutupi bintang di belakangnya)
       context.beginPath()
       context.arc(containerWidth / 2, containerHeight / 2, currentScale, 0, 2 * Math.PI)
       context.fillStyle = "#000000"
       context.fill()
-      context.strokeStyle = "#ffffff"
+      context.strokeStyle = "rgba(255, 255, 255, 0.2)"
       context.lineWidth = 2 * scaleFactor
       context.stroke()
 
       if (landFeatures) {
+        // Graticule (Garis bujur & lintang)
         const graticule = d3.geoGraticule()
         context.beginPath()
         path(graticule())
-        context.strokeStyle = "#ffffff"
+        context.strokeStyle = "rgba(255, 255, 255, 0.1)"
         context.lineWidth = 1 * scaleFactor
-        context.globalAlpha = 0.25
         context.stroke()
-        context.globalAlpha = 1
 
+        // Garis batas daratan
         context.beginPath()
         landFeatures.features.forEach((feature: any) => {
           path(feature)
         })
-        context.strokeStyle = "#ffffff"
+        context.strokeStyle = "rgba(255, 255, 255, 0.5)"
         context.lineWidth = 1 * scaleFactor
         context.stroke()
 
+        // Titik-titik daratan
         allDots.forEach((dot) => {
           const projected = projection([dot.lng, dot.lat])
           if (
@@ -147,7 +177,7 @@ export default function RotatingEarth({ width = 800, height = 600, className = "
           ) {
             context.beginPath()
             context.arc(projected[0], projected[1], 1.2 * scaleFactor, 0, 2 * Math.PI)
-            context.fillStyle = "#999999"
+            context.fillStyle = "#aaaaaa"
             context.fill()
           }
         })
@@ -176,10 +206,9 @@ export default function RotatingEarth({ width = 800, height = 600, className = "
       }
     }
 
-    // [BAGIAN YANG DIPERBAIKI UNTUK VERCEL]
     const rotation: [number, number] = [0, 0]
     let autoRotate = true
-    const rotationSpeed = 0.5
+    const rotationSpeed = 0.3 // Sedikit diperlambat biar lebih sinematik
 
     const rotate = () => {
       if (autoRotate) {
@@ -191,13 +220,23 @@ export default function RotatingEarth({ width = 800, height = 600, className = "
 
     const rotationTimer = d3.timer(rotate)
 
+    let isDragging = false
+    let dragStartPos = { x: 0, y: 0 }
+
     const handleMouseDown = (event: MouseEvent) => {
       autoRotate = false
+      isDragging = false
+      dragStartPos = { x: event.clientX, y: event.clientY }
       const startX = event.clientX
       const startY = event.clientY
       const startRotation: [number, number] = [...rotation]
       
       const handleMouseMove = (moveEvent: MouseEvent) => {
+        // Deteksi apakah user beneran nge-drag atau cuma nge-klik
+        if (Math.abs(moveEvent.clientX - dragStartPos.x) > 3 || Math.abs(moveEvent.clientY - dragStartPos.y) > 3) {
+          isDragging = true
+        }
+
         const sensitivity = 0.5
         const dx = moveEvent.clientX - startX
         const dy = moveEvent.clientY - startY
@@ -207,13 +246,54 @@ export default function RotatingEarth({ width = 800, height = 600, className = "
         projection.rotate(rotation)
         render()
       }
+
       const handleMouseUp = () => {
         document.removeEventListener("mousemove", handleMouseMove)
         document.removeEventListener("mouseup", handleMouseUp)
-        setTimeout(() => { autoRotate = true }, 10)
+        setTimeout(() => { 
+          if (!isDragging) autoRotate = true 
+        }, 3000)
       }
+
       document.addEventListener("mousemove", handleMouseMove)
       document.addEventListener("mouseup", handleMouseUp)
+    }
+
+    // ANIMASI KLIK UNTUK PINDAH KE TITIK TERTENTU
+    const handleClick = (event: MouseEvent) => {
+      if (isDragging) return // Jangan animasi kalau user lagi muter bumi manual
+
+      const rect = canvas.getBoundingClientRect()
+      const x = event.clientX - rect.left
+      const y = event.clientY - rect.top
+      
+      // Hitung posisi lintang & bujur dari koordinat X,Y yang diklik
+      const coords = projection.invert([x, y])
+
+      if (coords) {
+        autoRotate = false
+        const currentRotation = projection.rotate()
+        // Rumus agar koordinat yang diklik berada persis di tengah layar
+        const targetRotation: [number, number, number] = [-coords[0], -coords[1], currentRotation[2]]
+
+        // Animasi halus pergerakan buminya (berlangsung 1.2 detik)
+        d3.transition()
+          .duration(1200)
+          .tween("rotate", () => {
+            const r = d3.interpolate(currentRotation, targetRotation)
+            return (t) => {
+              const current = r(t)
+              rotation[0] = current[0]
+              rotation[1] = current[1]
+              projection.rotate(current)
+              render()
+            }
+          })
+          .on("end", () => {
+             // Lanjut muter otomatis setelah 3 detik
+             setTimeout(() => { autoRotate = true }, 3000)
+          })
+      }
     }
 
     const handleWheel = (event: WheelEvent) => {
@@ -225,22 +305,24 @@ export default function RotatingEarth({ width = 800, height = 600, className = "
     }
 
     canvas.addEventListener("mousedown", handleMouseDown)
+    canvas.addEventListener("click", handleClick)
     canvas.addEventListener("wheel", handleWheel)
     loadWorldData()
 
     return () => {
       rotationTimer.stop()
       canvas.removeEventListener("mousedown", handleMouseDown)
+      canvas.removeEventListener("click", handleClick)
       canvas.removeEventListener("wheel", handleWheel)
     }
   }, [width, height])
 
   if (error) {
     return (
-      <div className={`dark flex items-center justify-center bg-card rounded-2xl p-8 ${className}`}>
+      <div className={`dark flex items-center justify-center bg-neutral-900 rounded-2xl p-8 ${className}`}>
         <div className="text-center">
-          <p className="dark text-destructive font-semibold mb-2">Error loading Earth visualization</p>
-          <p className="dark text-muted-foreground text-sm">{error}</p>
+          <p className="dark text-red-500 font-semibold mb-2">Error loading Earth visualization</p>
+          <p className="dark text-gray-400 text-sm">{error}</p>
         </div>
       </div>
     )
@@ -250,11 +332,11 @@ export default function RotatingEarth({ width = 800, height = 600, className = "
     <div className={`relative ${className}`}>
       <canvas
         ref={canvasRef}
-        className="w-full h-auto rounded-2xl bg-background dark"
-        style={{ maxWidth: "100%", height: "auto" }}
+        className="w-full h-auto rounded-2xl bg-black"
+        style={{ maxWidth: "100%", height: "auto", cursor: "crosshair" }}
       />
-      <div className="absolute bottom-4 left-4 text-xs text-muted-foreground px-2 py-1 rounded-md dark bg-neutral-900">
-        Drag to rotate • Scroll to zoom
+      <div className="absolute bottom-4 left-4 text-xs text-gray-400 px-3 py-2 rounded-md bg-white/10 backdrop-blur-md border border-white/10">
+        Klik tempat mana saja untuk memutar bumi • Drag • Scroll
       </div>
     </div>
   )
