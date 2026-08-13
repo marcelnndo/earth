@@ -176,7 +176,8 @@ export default function RotatingEarth({ width = 800, height = 600, className = "
       }
     }
 
-    const rotation = [0, 0]
+    // [BAGIAN YANG DIPERBAIKI UNTUK VERCEL]
+    const rotation: [number, number] = [0, 0]
     let autoRotate = true
     const rotationSpeed = 0.5
 
@@ -194,7 +195,8 @@ export default function RotatingEarth({ width = 800, height = 600, className = "
       autoRotate = false
       const startX = event.clientX
       const startY = event.clientY
-      const startRotation = [...rotation]
+      const startRotation: [number, number] = [...rotation]
+      
       const handleMouseMove = (moveEvent: MouseEvent) => {
         const sensitivity = 0.5
         const dx = moveEvent.clientX - startX
